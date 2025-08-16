@@ -1,0 +1,39 @@
+name: AI PR Security Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  ai_review:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare diff
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}... > pr.diff
+      - name: Azure OpenAI review
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }} # gpt-4o, gpt-4o-mini, etc.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - << 'PY'
+import os, requests, json
+diff = open('pr.diff','r',encoding='utf-8',errors='ignore').read()[:120000]
+prompt = f"""
+You are a senior AppSec engineer. Review this PR diff for secrets, insecure patterns,
+OWASP Top 10, and IaC risks. Respond with a concise, actionable checklist.
+
+Diff:
+{diff}
+"""
+url = f"{os.environ['AZURE_OPENAI_ENDPOINT']}/openai/deployments/{os.environ['AZURE_OPENAI_DEPLOYMENT']}/chat/completions?api-version=2024-02-15-preview"
+headers = {"api-key": os.environ["AZURE_OPENAI_KEY"], "Content-Type":"application/json"}
+body = {"messages":[{"role":"user","content":prompt}], "temperature":0.1}
+r = requests.post(url, headers=headers, data=json.dumps(body), timeout=60)
+r.raise_for_status()
+msg = r.json()["choices"][0]["message"]["content"]
+print(msg)
+PY

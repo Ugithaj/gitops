@@ -1,0 +1,73 @@
+name: Build, Scan, Push, GitOps Bump
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+env:
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_NAME }}.azurecr.io
+  IMAGE_NAME: hello
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to commit version bump
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set tag
+        id: vars
+        run: echo "TAG=build-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+
+      - name: Azure login (SP)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        uses: azure/cli@v2
+        with:
+          inlineScript: az acr login --name $ACR_NAME
+
+      - name: Build image
+        run: |
+          docker build -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.vars.outputs.TAG }} ./app
+
+      - name: Trivy filesystem scan (app)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: ./app
+          format: table
+          exit-code: '0'   # fail hard later if you want
+
+      - name: Trivy image scan (vulns)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.TAG }}
+          format: table
+          exit-code: '0'
+
+      - name: Push image
+        run: |
+          docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.vars.outputs.TAG }}
+
+      - name: Checkov (K8s/Helm/IaC)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: charts/hello
+          config_file: policy/checkov.yaml
+        continue-on-error: true
+
+      - name: GitOps bump Helm values with new tag
+        run: |
+          sed -i "s/^  tag: \".*\"/  tag: \"${{ steps.vars.outputs.TAG }}\"/" charts/hello/values.yaml
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add charts/hello/values.yaml
+          git commit -m "chore(gitops): bump image tag to ${{ steps.vars.outputs.TAG }}"
+          git push
