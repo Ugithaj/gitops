@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: <ACR_NAME>.azurecr.io/hello
+  repository: lbdr1acr.azurecr.io/hello
   tag: "0.1.0"    # CI updates this automatically
   pullPolicy: IfNotPresent
 
