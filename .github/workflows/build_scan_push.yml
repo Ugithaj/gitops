@@ -1,39 +1,41 @@
 name: Build, Scan, Push, GitOps Bump
+
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch: {}
 
 env:
   ACR_NAME: ${{ secrets.ACR_NAME }}
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_NAME }}.azurecr.io
   IMAGE_NAME: hello
 
 jobs:
   build-scan-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # to commit version bump
-    steps:
-      - uses: actions/checkout@v4
+      contents: write  # To commit version bump
 
-      - name: Set tag
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
         id: vars
         run: echo "TAG=build-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
 
       - name: Azure login (SP)
         uses: azure/login@v2
         with:
-           creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: ACR login
-        uses: azure/cli@v2
-        with:
-          inlineScript: az acr login --name $ACR_NAME
-
-      - name: Build image
         run: |
-          docker build -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.vars.outputs.TAG }} ./app
+          TOKEN=$(az acr login -n $ACR_NAME --expose-token --output tsv --query accessToken)
+          docker login $ACR_NAME.azurecr.io -u 00000000-0000-0000-0000-000000000000 -p $TOKEN
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ steps.vars.outputs.TAG }} ./app
 
       - name: Trivy filesystem scan (app)
         uses: aquasecurity/trivy-action@0.28.0
@@ -41,18 +43,18 @@ jobs:
           scan-type: fs
           scan-ref: ./app
           format: table
-          exit-code: '0'   # fail hard later if you want
+          exit-code: '0'
 
       - name: Trivy image scan (vulns)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.TAG }}
+          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ steps.vars.outputs.TAG }}
           format: table
           exit-code: '0'
 
-      - name: Push image
+      - name: Push Docker image to ACR
         run: |
-          docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.vars.outputs.TAG }}
+          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ steps.vars.outputs.TAG }}
 
       - name: Checkov (K8s/Helm/IaC)
         uses: bridgecrewio/checkov-action@v12
