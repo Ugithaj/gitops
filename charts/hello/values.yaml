@@ -20,3 +20,8 @@ hpa:
   minReplicas: 2
   maxReplicas: 5
   cpu: 60
+  
+service:
+  type: LoadBalancer   # or ClusterIP / NodePort depending on your needs
+  port: 80             # the port you want to expose externally
+  targetPort: 8080     # the container port your app listens on
