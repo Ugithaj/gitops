@@ -48,7 +48,7 @@ jobs:
       - name: Trivy image scan (vulns)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ steps.vars.outputs.TAG }}
+          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.TAG }}
           format: table
           exit-code: '0'
 
