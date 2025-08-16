@@ -3,7 +3,7 @@ name: Build, Scan, Push, GitOps Bump
 on:
   push:
     branches: ["main"]
-  workflow_dispatch: {}
+  #workflow_dispatch: {}
 
 env:
   ACR_NAME: ${{ secrets.ACR_NAME }}
