@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: lbdr1acr.azurecr.io/hello
-  tag: "build-13"    # CI updates this automatically
+  tag: "build-15"    # CI updates this automatically
   pullPolicy: IfNotPresent
 
 service:
